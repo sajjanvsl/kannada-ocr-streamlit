@@ -13,6 +13,7 @@ Clone the project
    pip3 install -r requirements.txt
 ## Start the server
    cd C:\Users\Admin\Downloads\kannada_ocr_web_app
-
+##   To run Main page
    streamlit run app.py
+##   To run Feedback form
    streamlit run feedback_dashboard.py
