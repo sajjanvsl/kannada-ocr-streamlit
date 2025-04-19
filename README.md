@@ -12,4 +12,4 @@ Clone the project
 ## Install dependencies
    pip3 install -r requirements.txt
 ## Start the server
-   streamlit run app.py
+   C:\Users\Admin\Downloads\kannada_ocr_web_app>streamlit run app.py
