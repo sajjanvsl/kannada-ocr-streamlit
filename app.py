@@ -4,7 +4,7 @@ import pytesseract
 import os
 
 # Optional: Set Tesseract path if needed (Windows only)
-# pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
 
 st.set_page_config(page_title="Old Kannada to Hosa Kannada", layout="centered")
 
