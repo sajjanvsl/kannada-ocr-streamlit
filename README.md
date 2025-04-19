@@ -1,0 +1,1 @@
+# kannada-ocr-streamlit
