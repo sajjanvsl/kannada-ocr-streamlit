@@ -106,7 +106,7 @@ else:
 # Footer with contact info and social links
 st.markdown("""
     <div class="footer">
-        📧 Contact: csdept@rcub.ac.in | ☎️ +91-831-1234567<br>
+        📧 Contact: csdept@rcub.ac.in | ☎️ +91-9008802403<br>
         🌐 <a href="https://rcub.ac.in" target="_blank">rcub.ac.in</a> |
         📘 <a href="https://facebook.com/rcubelgaum" target="_blank">Facebook</a>
     </div>
