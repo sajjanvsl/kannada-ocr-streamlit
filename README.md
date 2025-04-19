@@ -14,4 +14,5 @@ Clone the project
 ## Start the server
    cd C:\Users\Admin\Downloads\kannada_ocr_web_app
 
-   C:\Users\Admin\Downloads\kannada_ocr_web_app>streamlit run app.py
+   streamlit run app.py
+   streamlit run feedback_dashboard.py
