@@ -19,4 +19,4 @@ Clone the project
 ##   To run Feedback form
    streamlit run feedback_dashboard.py
 ## To run Kannada_OCR
-   streamlit run kannada_ocr_final_app.py
+   streamlit run app19_final_updated.py
