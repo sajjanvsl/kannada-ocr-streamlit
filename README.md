@@ -12,7 +12,7 @@ Clone the project
 ## Install dependencies
    pip3 install -r requirements.txt
 ## Start the server
-   # conda activate tf39
+   ### conda activate tf39
    # cd C:\Users\Admin\Downloads\kannada_ocr_web_app
 ##   To run Main page
    streamlit run app.py
