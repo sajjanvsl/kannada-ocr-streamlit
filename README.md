@@ -16,7 +16,7 @@ Clone the project
    ### cd C:\Users\Admin\Downloads\kannada_ocr_web_app
    ### cd C:\Users\Admin\Downloads\Kannada_OCR_Local_App
 ##   To run Main page
-   streamlit run app.py
+   streamlit run app21.py
 ##   To run Feedback form
    streamlit run feedback_dashboard.py
 ## To run Kannada_OCR
