@@ -14,6 +14,7 @@ Clone the project
 ## Start the server
    ### conda activate tf39
    ### cd C:\Users\Admin\Downloads\kannada_ocr_web_app
+   ### C:\Users\Admin\Downloads\Kannada_OCR_Local_App
 ##   To run Main page
    streamlit run app.py
 ##   To run Feedback form
