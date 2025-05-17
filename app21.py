@@ -176,7 +176,7 @@ if page == "📄 OCR Processor":
         psm = st.sidebar.selectbox("Tesseract PSM Mode", [3, 4, 6, 11])
         show_enhanced = st.sidebar.checkbox("Show Enhanced Image", value=True)
         predict_year = st.sidebar.checkbox("Predict Year of Document", value=True)
-        submit_feedback = st.sidebar.button("✅ Submit Feedback")
+       
 
         image = Image.open(uploaded_file)
 
@@ -199,6 +199,8 @@ if page == "📄 OCR Processor":
             st.image(cropped, caption="Auto-Cropped Preview")
             image = Image.fromarray(cropped)
 
+        # 📷 Show original image before enhancement
+        st.image(image, caption="Original Image", use_container_width=True)
         # ⬛ Enhancement
         enhanced = enhance_image(image, method)
 
@@ -214,32 +216,38 @@ if page == "📄 OCR Processor":
         st.subheader("📝 OCR Output")
 
         col1, col2 = st.columns(2)
+
         with col1:
-                st.markdown("**🧐 OCR Result (Old Kannada)**")
-                st.text_area("Original OCR Text", raw_text, height=300, label_visibility="collapsed")
+            st.markdown("**🧐 OCR Result (Old Kannada)**")
+            st.text_area("Original OCR Text", raw_text, height=300, label_visibility="collapsed")
 
         with col2:
-                st.markdown("**📝 Hosa Kannada Translation**")
-                final_edit = st.text_area("Edit if needed", value=translated, height=300, label_visibility="collapsed")
-
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Confidence", f"{confidence}%")
-        with col2:
-            if predict_year:
-                pred = model.predict(cv2.resize(enhanced, (64, 64)).flatten().reshape(1, -1))
-                year = encoder.inverse_transform(pred)[0]
-                st.metric("Predicted Year", year)
-
-        st.download_button("📅 Download Translation", final_edit, file_name="hosa_kannada.txt")
-
+            st.markdown("**📝 Hosa Kannada Translation**")
+            final_edit = st.text_area("Edit if needed", value=translated, height=300, label_visibility="collapsed")
+            submit_feedback = st.button("✅ Submit Feedback", key="submit_feedback_translation")
         if submit_feedback:
-            row = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "old_kannada": raw_text, "corrected": final_edit, "confidence": confidence}
+            row = {
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "old_kannada": raw_text,
+                    "corrected": final_edit,
+                    "confidence": confidence
+                    }
             df = pd.read_csv("feedback.csv") if os.path.exists("feedback.csv") else pd.DataFrame(columns=row.keys())
             df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
             df.to_csv("feedback.csv", index=False)
             st.success("✅ Feedback Saved!")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Translated Confidence", f"{confidence}%")
+        with col2:
+            if predict_year:
+                pred = model.predict(cv2.resize(enhanced, (64, 64)).flatten().reshape(1, -1))
+                year = encoder.inverse_transform(pred)[0]
+                st.metric("This manuscript belongs to apprimate year or Predicted Year", year)
+
+        st.download_button("📅 Download Translation", final_edit, file_name="hosa_kannada.txt")
+
+     
 
 elif page == "📘 How to Use":
     st.header("📘 User Instructions")
