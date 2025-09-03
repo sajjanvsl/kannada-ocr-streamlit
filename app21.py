@@ -141,16 +141,20 @@ def convert_old_to_new_kannada(text):
     return text
 
 @st.cache_resource
-def prepare_classifier():
-    # ✅ Google Drive file ID of Dataset.zip
-    file_id = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"   # <-- Your shared Drive folder/file ID
-    zip_path = "Dataset.zip"
+import gdown
 
-    # Download Dataset.zip if not already available
-    if not os.path.exists(zip_path):
-        url = f"https://drive.google.com/uc?id={file_id}"
-        st.info("📥 Downloading dataset from Google Drive...")
-        gdown.download(url, zip_path, quiet=False)
+@st.cache_resource
+def prepare_classifier():
+    folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
+    output_folder = "Dataset"
+    
+    if not os.path.exists(output_folder):
+        st.info("📥 Downloading dataset folder from Google Drive...")
+        gdown.download_folder(url=folder_url, output=output_folder, quiet=False, use_cookies=False)
+        st.success("✅ Dataset folder downloaded!")
+
+    # Proceed with loading images from output_folder, train KNN, etc.
+
 
     # Extract if Dataset folder not present
     if not os.path.exists("Dataset"):
