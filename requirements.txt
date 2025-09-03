@@ -1,4 +1,10 @@
 streamlit
+torch
+torchvision
+opencv-python-headless
 pytesseract
 pillow
-pandas
+joblib
+scikit-learn
+numpy
+streamlit-cropper
