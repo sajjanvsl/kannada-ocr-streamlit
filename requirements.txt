@@ -1,10 +1,20 @@
+# Core
 streamlit
-torch
-torchvision
-opencv-python-headless
-pytesseract
+numpy
 pillow
 joblib
+
+# Deep Learning
+torch
+torchvision
+
+# Image Processing
+opencv-python-headless
+pytesseract
+
+# Machine Learning
 scikit-learn
-numpy
+
+# Extra utilities
+gdown
 streamlit-cropper
