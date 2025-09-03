@@ -143,7 +143,7 @@ def convert_old_to_new_kannada(text):
 @st.cache_resource
 def prepare_classifier():
     # ✅ Google Drive file ID of Dataset.zip
-    file_id = "1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm"   # <-- Your shared Drive folder/file ID
+    file_id = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"   # <-- Your shared Drive folder/file ID
     zip_path = "Dataset.zip"
 
     # Download Dataset.zip if not already available
