@@ -141,9 +141,6 @@ def convert_old_to_new_kannada(text):
     return text
 
 @st.cache_resource
-import gdown
-
-@st.cache_resource
 def prepare_classifier():
     folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
     output_folder = "Dataset"
