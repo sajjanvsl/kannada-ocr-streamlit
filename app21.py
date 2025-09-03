@@ -23,8 +23,6 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score
 
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
-pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
-os.environ['TESSDATA_PREFIX'] = r'C:\\Program Files\\Tesseract-OCR\\tessdata'
 
 st.set_page_config(page_title="Kannada OCR", layout="centered")
 
@@ -141,23 +139,28 @@ def convert_old_to_new_kannada(text):
         text = text.replace(old_word, new_word)
     return text
 
+# ---- Tesseract Path Fix ----
+if platform.system() == "Windows":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+    os.environ['TESSDATA_PREFIX'] = r"C:\\Program Files\\Tesseract-OCR\\tessdata"
+else:
+    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+
+# ---- Dataset Loader ----
 @st.cache_resource
 def prepare_classifier():
-    folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
+    folder_url = "https://drive.google.com/uc?id=YOUR_ZIP_FILE_ID"
+    zip_path = "Dataset.zip"
     output_folder = "Dataset"
-    
+
     if not os.path.exists(output_folder):
-        st.info("📥 Downloading dataset folder from Google Drive...")
-        gdown.download_folder(url=folder_url, output=output_folder, quiet=False, use_cookies=False)
-        st.success("✅ Dataset folder downloaded!")
+        st.info("📥 Downloading dataset...")
+        gdown.download(url=folder_url, output=zip_path, quiet=False)
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(output_folder)
+        st.success("✅ Dataset ready!")
 
     # Proceed with loading images from output_folder, train KNN, etc.
-
-
-    # Extract if Dataset folder not present
-    if not os.path.exists("Dataset"):
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall("Dataset")
 
     # ✅ Load dataset for KNN year classifier
     X, y = [], []
