@@ -139,13 +139,6 @@ def convert_old_to_new_kannada(text):
         text = text.replace(old_word, new_word)
     return text
 
-# ---- Tesseract Path Fix ----
-if platform.system() == "Windows":
-    pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
-    os.environ['TESSDATA_PREFIX'] = r"C:\\Program Files\\Tesseract-OCR\\tessdata"
-else:
-    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
-
 # ---- Dataset Loader ----
 @st.cache_resource
 def prepare_classifier():
