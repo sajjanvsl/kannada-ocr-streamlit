@@ -26,6 +26,10 @@ pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 st.set_page_config(page_title="Kannada OCR", layout="centered")
 
+def run_full_ocr(image_array, psm=6):
+    config = f"--psm {psm} --oem 3 -l kan"
+    return pytesseract.image_to_string(Image.fromarray(image_array), config=config).strip()
+
 # --- Header Banner ---
 st.markdown("""
 <style>
