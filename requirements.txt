@@ -19,5 +19,3 @@ scikit-learn
 # Extra utilities
 gdown
 streamlit-cropper
-tesseract-ocr
-tesseract-ocr-kan
