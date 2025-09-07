@@ -139,6 +139,7 @@ def convert_old_to_new_kannada(text):
 
 @st.cache_resource
 def prepare_classifier():
+    import gdown
     folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
     output_folder = "Dataset"
     
@@ -146,7 +147,6 @@ def prepare_classifier():
         st.info("📥 Downloading dataset folder from Google Drive...")
         gdown.download_folder(url=folder_url, output=output_folder, quiet=False, use_cookies=False)
         st.success("✅ Dataset folder downloaded!")
-
     # ✅ Load dataset for KNN year classifier
     X, y = [], []
     IMG_SIZE = 64
