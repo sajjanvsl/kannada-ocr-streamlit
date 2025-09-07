@@ -15,6 +15,7 @@ import random
 import numpy as np
 import cv2
 import zipfile
+import gdown
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
@@ -139,7 +140,6 @@ def convert_old_to_new_kannada(text):
 
 @st.cache_resource
 def prepare_classifier():
-    import gdown
     folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
     output_folder = "Dataset"
     
