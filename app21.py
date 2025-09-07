@@ -146,7 +146,10 @@ def convert_old_to_new_kannada(text):
 # ---- Dataset Loader ----
 @st.cache_resource
 def prepare_classifier():
-    folder_url = "https://drive.google.com/uc?id=YOUR_ZIP_FILE_ID"
+    # Use the FILE_ID from your Google Drive link
+    file_id = "1ZdYaEZNSeAPEj_aDQEbQC10FMmQzbUc-"
+    folder_url = f"https://drive.google.com/uc?id={file_id}"
+
     zip_path = "Dataset.zip"
     output_folder = "Dataset"
 
@@ -156,6 +159,8 @@ def prepare_classifier():
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(output_folder)
         st.success("✅ Dataset ready!")
+
+    return output_folder
 
     # Proceed with loading images from output_folder, train KNN, etc.
 
