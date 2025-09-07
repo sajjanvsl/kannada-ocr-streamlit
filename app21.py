@@ -21,6 +21,11 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score
+import streamlit as st
+import torch
+import pickle
+
+from app21_cnn import KannadaCNN  # adjust import if needed
 
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
@@ -146,7 +151,6 @@ def convert_old_to_new_kannada(text):
 # ---- Dataset Loader ----
 @st.cache_resource
 def prepare_classifier():
-    # Use the FILE_ID from your Google Drive link
     file_id = "1ZdYaEZNSeAPEj_aDQEbQC10FMmQzbUc-"
     folder_url = f"https://drive.google.com/uc?id={file_id}"
 
@@ -160,7 +164,18 @@ def prepare_classifier():
             zip_ref.extractall(output_folder)
         st.success("✅ Dataset ready!")
 
-    return output_folder
+    # --- Load model and encoder from extracted files ---
+    model_path = os.path.join(output_folder, "kannada_char_model.pt")
+    label_path = os.path.join(output_folder, "kannada_label_encoder.pkl")
+
+    with open(label_path, "rb") as f:
+        encoder = pickle.load(f)
+
+    model = KannadaCNN(num_classes=len(encoder.classes_))
+    model.load_state_dict(torch.load(model_path, map_location=torch.device("cpu")))
+    model.eval()
+
+    return model, encoder, output_folder
 
     # Proceed with loading images from output_folder, train KNN, etc.
 
