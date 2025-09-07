@@ -151,32 +151,26 @@ def convert_old_to_new_kannada(text):
 # ---- Dataset Loader ----
 @st.cache_resource
 def prepare_classifier():
-    file_id = "1ZdYaEZNSeAPEj_aDQEbQC10FMmQzbUc-"
-    folder_url = f"https://drive.google.com/uc?id={file_id}"
-
-    zip_path = "Dataset.zip"
+    folder_url = "https://drive.google.com/drive/folders/1djN6Qs3oMXfKUleVzcYp8Xt1uqwTmN4h"
     output_folder = "Dataset"
+    zip_path = "Dataset.zip"
 
     if not os.path.exists(output_folder):
-        st.info("📥 Downloading dataset...")
-        gdown.download(url=folder_url, output=zip_path, quiet=False)
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(output_folder)
-        st.success("✅ Dataset ready!")
+        st.info("📥 Downloading dataset folder...")
+        # Downloads the folder—adjust remaining_ok as needed
+        gdown.download_folder(folder_url, output=output_folder, quiet=False, remaining_ok=True)
+        st.success("✅ Dataset folder downloaded!")
 
-    # --- Load model and encoder from extracted files ---
-    model_path = os.path.join(output_folder, "kannada_char_model.pt")
-    label_path = os.path.join(output_folder, "kannada_label_encoder.pkl")
+    # Optional: zip the folder locally if needed
+    if not os.path.exists(zip_path):
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(output_folder):
+                for f in files:
+                    full_path = os.path.join(root, f)
+                    zf.write(full_path, arcname=os.path.relpath(full_path, output_folder))
+        st.info("📦 Dataset folder zipped locally.")
 
-    with open(label_path, "rb") as f:
-        encoder = pickle.load(f)
-
-    model = KannadaCNN(num_classes=len(encoder.classes_))
-    model.load_state_dict(torch.load(model_path, map_location=torch.device("cpu")))
-    model.eval()
-
-    return model, encoder, output_folder
-
+    return output_folder
     # Proceed with loading images from output_folder, train KNN, etc.
 
     # ✅ Load dataset for KNN year classifier
