@@ -22,7 +22,13 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score
 
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
-
+def run_full_ocr(image_array, psm=6):
+    config = f"--psm {psm}"
+    return pytesseract.image_to_string(
+        Image.fromarray(image_array),
+        config=config
+    ).strip()
+    
 st.set_page_config(page_title="Kannada OCR", layout="centered")
 
 # --- Header Banner ---
