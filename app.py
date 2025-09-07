@@ -139,13 +139,19 @@ def convert_old_to_new_kannada(text):
 
 @st.cache_resource
 def prepare_classifier():
-    if not os.path.exists("Dataset"):
-        with zipfile.ZipFile("/mnt/data/Dataset.zip", 'r') as zip_ref:
-            zip_ref.extractall("Dataset")
+    folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
+    output_folder = "Dataset"
+    
+    if not os.path.exists(output_folder):
+        st.info("📥 Downloading dataset folder from Google Drive...")
+        gdown.download_folder(url=folder_url, output=output_folder, quiet=False, use_cookies=False)
+        st.success("✅ Dataset folder downloaded!")
+
+    # ✅ Load dataset for KNN year classifier
     X, y = [], []
     IMG_SIZE = 64
-    for folder in os.listdir("Dataset"):
-        path = os.path.join("Dataset", folder)
+    for folder in os.listdir(output_folder):
+        path = os.path.join(output_folder, folder)
         if os.path.isdir(path):
             for file in os.listdir(path):
                 try:
@@ -155,13 +161,16 @@ def prepare_classifier():
                     y.append(folder)
                 except:
                     continue
+
     le = LabelEncoder()
     y_enc = le.fit_transform(y)
-    X_train, X_test, y_train, y_test = train_test_split(np.array(X), y_enc, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(
+        np.array(X), y_enc, test_size=0.2, random_state=42
+    )
     model = KNeighborsClassifier(n_neighbors=3)
     model.fit(X_train, y_train)
-    return model, le, accuracy_score(y_test, model.predict(X_test))
 
+    return model, le, accuracy_score(y_test, model.predict(X_test))
 model, encoder, _ = prepare_classifier()
 
 if page == "📄 OCR Processor":
