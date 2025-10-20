@@ -147,46 +147,31 @@ def convert_old_to_new_kannada(text):
 @st.cache_resource(show_spinner=False)
 def prepare_classifier():
     """
-    Uses your existing approach but safer:
-    - Only runs if OpenCV exists and Dataset folder exists
-    - No network calls (gdown) by default in cloud
+    Downloads model and encoder files from Google Drive safely (no folder recursion)
     """
-    if cv2 is None or not os.path.exists("Dataset"):
-        return None, None, None
+    import gdown, os, torch, pickle
 
-    X, y = [], []
-    IMG_SIZE = 64
-    for folder in os.listdir("Dataset"):
-        path = os.path.join("Dataset", folder)
-        if os.path.isdir(path):
-            for file in os.listdir(path):
-                try:
-                    img = cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE)
-                    if img is None:
-                        continue
-                    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
-                    X.append(img.flatten())
-                    y.append(folder)
-                except Exception:
-                    continue
+    output_folder = "models"
+    os.makedirs(output_folder, exist_ok=True)
 
-    if len(X) < 10:
-        return None, None, None
+    # 🔽 Replace with your actual Google Drive file IDs
+    files = {
+        "model.pth": "https://drive.google.com/uc?id=YOUR_MODEL_FILE_ID",
+        "encoder.pkl": "https://drive.google.com/uc?id=YOUR_ENCODER_FILE_ID"
+    }
 
-    from sklearn.neighbors import KNeighborsClassifier
-    from sklearn.model_selection import train_test_split
-    from sklearn.preprocessing import LabelEncoder
-    from sklearn.metrics import accuracy_score
+    for name, url in files.items():
+        out_path = os.path.join(output_folder, name)
+        if not os.path.exists(out_path):
+            gdown.download(url, out_path, quiet=False)
 
-    le = LabelEncoder()
-    y_enc = le.fit_transform(y)
-    X_train, X_test, y_train, y_test = train_test_split(
-        np.array(X), y_enc, test_size=0.2, random_state=42
-    )
-    model = KNeighborsClassifier(n_neighbors=3)
-    model.fit(X_train, y_train)
-    acc = accuracy_score(y_test, model.predict(X_test))
-    return model, le, acc
+    # 🔹 Load model and encoder (adjust as per your actual files)
+    model = torch.load(os.path.join(output_folder, "model.pth"), map_location="cpu")
+    with open(os.path.join(output_folder, "encoder.pkl"), "rb") as f:
+        encoder = pickle.load(f)
+
+    # Optional: return dummy accuracy if needed
+    return model, encoder, 0.0
 
 model_year, enc_year, year_acc = prepare_classifier()
 
