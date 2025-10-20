@@ -144,29 +144,39 @@ def convert_old_to_new_kannada(text):
         text = text.replace(old_word, new_word)
     return text
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def prepare_classifier():
-    folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
-    output_folder = "Dataset"
-    
-    if not os.path.exists(output_folder):
-        st.info("📥 Downloading dataset folder from Google Drive...")
-        gdown.download_folder(url=folder_url, output=output_folder, quiet=False, use_cookies=False)
-        st.success("✅ Dataset folder downloaded!")
-    # ✅ Load dataset for KNN year classifier
+    """
+    Uses your existing approach but safer:
+    - Only runs if OpenCV exists and Dataset folder exists
+    - No network calls (gdown) by default in cloud
+    """
+    if cv2 is None or not os.path.exists("Dataset"):
+        return None, None, None
+
     X, y = [], []
     IMG_SIZE = 64
-    for folder in os.listdir(output_folder):
-        path = os.path.join(output_folder, folder)
+    for folder in os.listdir("Dataset"):
+        path = os.path.join("Dataset", folder)
         if os.path.isdir(path):
             for file in os.listdir(path):
                 try:
                     img = cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE)
+                    if img is None:
+                        continue
                     img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
                     X.append(img.flatten())
                     y.append(folder)
-                except:
+                except Exception:
                     continue
+
+    if len(X) < 10:
+        return None, None, None
+
+    from sklearn.neighbors import KNeighborsClassifier
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import LabelEncoder
+    from sklearn.metrics import accuracy_score
 
     le = LabelEncoder()
     y_enc = le.fit_transform(y)
@@ -175,9 +185,10 @@ def prepare_classifier():
     )
     model = KNeighborsClassifier(n_neighbors=3)
     model.fit(X_train, y_train)
+    acc = accuracy_score(y_test, model.predict(X_test))
+    return model, le, acc
 
-    return model, le, accuracy_score(y_test, model.predict(X_test))
-model, encoder, _ = prepare_classifier()
+model_year, enc_year, year_acc = prepare_classifier()
 
 if page == "📄 OCR Processor":
 
