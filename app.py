@@ -17,18 +17,21 @@ import cv2
 import zipfile
 import gdown
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+from sklearn.svm import SVC
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
+from sklearn.decomposition import PCA
+from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import accuracy_score
+import joblib
 
+# Tesseract path
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+
 def run_full_ocr(image_array, psm=6):
-    config = f"--psm {psm}"
-    return pytesseract.image_to_string(
-        Image.fromarray(image_array),
-        config=config
-    ).strip()
-    
+    config = f'--oem 1 --psm {psm} -l kan'
+    return pytesseract.image_to_string(Image.fromarray(image_array), config=config).strip()
+
 st.set_page_config(page_title="Kannada OCR", layout="centered")
 
 # --- Header Banner ---
@@ -100,9 +103,10 @@ page = st.sidebar.radio(
     index=0
 )
 
-# --- OCR Utilities ---
+# --- OCR Utilities (rotation, crop, enhance) ---
 def rotate_image(image: Image.Image, angle: int) -> Image.Image:
     return image.rotate(angle, expand=True)
+
 def auto_crop_image(image_np):
     gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -122,10 +126,6 @@ def enhance_image(pil_image, method="adaptive"):
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return binary
 
-def run_full_ocr(image_array, psm=3):
-    config = f'--oem 1 --psm {psm} -l kan'
-    return pytesseract.image_to_string(Image.fromarray(image_array), config=config).strip()
-
 def convert_old_to_new_kannada(text):
     conversion_map = {
         "ಮದುಮಕ್ಕಳಿಗೆ": "ಮಗುಗಳಿಗೆ",
@@ -144,16 +144,18 @@ def convert_old_to_new_kannada(text):
         text = text.replace(old_word, new_word)
     return text
 
+# ------------------- Enhanced Year Classifier with Multiple Models -------------------
 @st.cache_resource
-def prepare_classifier():
+def prepare_classifiers():
     folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
     output_folder = "Dataset"
-    
+
     if not os.path.exists(output_folder):
         st.info("📥 Downloading dataset folder from Google Drive...")
         gdown.download_folder(url=folder_url, output=output_folder, quiet=False, use_cookies=False)
         st.success("✅ Dataset folder downloaded!")
-    # ✅ Load dataset for KNN year classifier
+
+    # Load images and labels
     X, y = [], []
     IMG_SIZE = 64
     for folder in os.listdir(output_folder):
@@ -168,19 +170,48 @@ def prepare_classifier():
                 except:
                     continue
 
+    X = np.array(X)
     le = LabelEncoder()
     y_enc = le.fit_transform(y)
-    X_train, X_test, y_train, y_test = train_test_split(
-        np.array(X), y_enc, test_size=0.2, random_state=42
-    )
-    model = KNeighborsClassifier(n_neighbors=3)
-    model.fit(X_train, y_train)
 
-    return model, le, accuracy_score(y_test, model.predict(X_test))
-model, encoder, _ = prepare_classifier()
+    # Normalize pixel values
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
+    # PCA to reduce dimension (keep 50 components)
+    pca = PCA(n_components=min(50, X_scaled.shape[0]-1, X_scaled.shape[1]))
+    X_pca = pca.fit_transform(X_scaled)
+
+    # Define models
+    models = {
+        "KNN": KNeighborsClassifier(n_neighbors=5),
+        "SVM": SVC(kernel='rbf', gamma='scale', C=1.0, probability=True),
+        "LDA": LDA()
+    }
+
+    # Train and evaluate using cross-validation
+    cv_scores = {}
+    trained_models = {}
+    for name, model in models.items():
+        scores = cross_val_score(model, X_pca, y_enc, cv=5, scoring='accuracy')
+        cv_scores[name] = (scores.mean(), scores.std())
+        # Retrain on full data for later prediction
+        model.fit(X_pca, y_enc)
+        trained_models[name] = model
+
+    # Display results in sidebar (only once)
+    st.sidebar.markdown("## 📊 Model Performance (5-fold CV)")
+    for name, (mean, std) in cv_scores.items():
+        st.sidebar.metric(f"{name} Accuracy", f"{mean:.2%} ± {std:.2%}")
+
+    # Also store encoder, scaler, pca for later use
+    return trained_models, le, scaler, pca, cv_scores
+
+# Load models (cached)
+models_dict, label_encoder, std_scaler, pca_transformer, cv_scores = prepare_classifiers()
+
+# ------------------- Main OCR Page -------------------
 if page == "📄 OCR Processor":
-
     st.sidebar.header("🎛️ Kannada OCR Controls")
     uploaded_file = st.sidebar.file_uploader("Upload Old Kannada Image", type=["jpg", "jpeg", "png", "bmp"])
     if uploaded_file is not None:
@@ -190,86 +221,95 @@ if page == "📄 OCR Processor":
         psm = st.sidebar.selectbox("Tesseract PSM Mode", [3, 4, 6, 11])
         show_enhanced = st.sidebar.checkbox("Show Enhanced Image", value=True)
         predict_year = st.sidebar.checkbox("Predict Year of Document", value=True)
-       
 
         image = Image.open(uploaded_file)
 
-        # ✂️ Manual crop section with rotation integrated
+        # Manual crop + rotation
         if enable_crop:
             st.subheader("✂️ Crop & Rotate Image")
-
-            # Rotation angle input here, within the crop section
             rotation_angle = st.slider("🔄 Rotate Before Cropping (°)", min_value=0, max_value=360, step=90, value=0)
-
             if rotation_angle != 0:
                 image = rotate_image(image, rotation_angle)
                 st.image(image, caption=f"Rotated {rotation_angle}")
-
             image = st_cropper(image, realtime_update=True, box_color='blue')
 
-        # 🤖 Auto-crop option (applies after rotation if enabled)
+        # Auto-crop
         if auto_crop:
             cropped = auto_crop_image(np.array(image.convert("RGB")))
             st.image(cropped, caption="Auto-Cropped Preview")
             image = Image.fromarray(cropped)
 
-        # 📷 Show original image before enhancement
         st.image(image, caption="Original Image", use_container_width=True)
-        # ⬛ Enhancement
-        enhanced = enhance_image(image, method)
 
+        # Enhancement
+        enhanced = enhance_image(image, method)
         if show_enhanced:
             st.image(enhanced, caption="Enhanced Image", clamp=True)
             st.download_button("📥 Download Enhanced Image", cv2.imencode(".png", enhanced)[1].tobytes(), file_name="enhanced.png")
 
+        # OCR
         with st.spinner("🔍 Running OCR..."):
             raw_text = run_full_ocr(enhanced, psm)
             confidence = round(random.uniform(85, 98), 2)
             translated = convert_old_to_new_kannada(raw_text)
 
         st.subheader("📝 OCR Output")
-
         col1, col2 = st.columns(2)
-
         with col1:
             st.markdown("**🧐 OCR Result (Old Kannada)**")
             st.text_area("Original OCR Text", raw_text, height=300, label_visibility="collapsed")
-
         with col2:
             st.markdown("**📝 Hosa Kannada Translation**")
             final_edit = st.text_area("Edit if needed", value=translated, height=300, label_visibility="collapsed")
             submit_feedback = st.button("✅ Submit Feedback", key="submit_feedback_translation")
         if submit_feedback:
             row = {
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "old_kannada": raw_text,
-                    "corrected": final_edit,
-                    "confidence": confidence
-                    }
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "old_kannada": raw_text,
+                "corrected": final_edit,
+                "confidence": confidence
+            }
             df = pd.read_csv("feedback.csv") if os.path.exists("feedback.csv") else pd.DataFrame(columns=row.keys())
             df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
             df.to_csv("feedback.csv", index=False)
             st.success("✅ Feedback Saved!")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Translated Confidence", f"{confidence}%")
-        with col2:
-            if predict_year:
-                pred = model.predict(cv2.resize(enhanced, (64, 64)).flatten().reshape(1, -1))
-                year = encoder.inverse_transform(pred)[0]
-                st.metric("This manuscript belongs to apprimate year or Predicted Year", year)
 
+        # --- Year Prediction using all three models ---
+        if predict_year:
+            # Prepare image: resize to 64x64, flatten, normalize, PCA
+            img_resized = cv2.resize(enhanced, (64, 64))
+            img_flat = img_resized.flatten().reshape(1, -1)
+            img_scaled = std_scaler.transform(img_flat)
+            img_pca = pca_transformer.transform(img_scaled)
+
+            st.subheader("📅 Year Prediction Results")
+            pred_years = {}
+            for name, model in models_dict.items():
+                pred_enc = model.predict(img_pca)[0]
+                pred_year = label_encoder.inverse_transform([pred_enc])[0]
+                pred_years[name] = pred_year
+
+            # Display individual predictions
+            cols = st.columns(3)
+            for i, (name, year) in enumerate(pred_years.items()):
+                cols[i].metric(f"{name} Prediction", year)
+
+            # Ensemble (majority vote)
+            from collections import Counter
+            vote = Counter(pred_years.values()).most_common(1)[0][0]
+            st.success(f"🎯 **Ensemble Prediction (Majority Vote): {vote}**")
+
+        # Download translation
         st.download_button("📅 Download Translation", final_edit, file_name="hosa_kannada.txt")
 
-     
-
+# ------------------- Other Pages -------------------
 elif page == "📘 How to Use":
     st.header("📘 User Instructions")
     st.markdown("""
     1. Upload Old Kannada image
     2. Enhance & Run OCR
     3. Translate to Modern Kannada
-    4. Predict Year (optional)
+    4. Predict Year (optional) – uses three advanced ML models (KNN, SVM, LDA) with majority vote
     5. Download & Submit Feedback
     """)
 
@@ -303,7 +343,7 @@ elif page == "🙏 Acknowledgements":
     👍 Facebook: [facebook.com/domlurashok](https://www.facebook.com/domlurashok)
     """)
 
-# --- Footer ---
+# --- Footer and Back-to-Top Button ---
 st.markdown("""
 <hr>
 <div style='text-align:center; font-size: 0.9em; color: gray;'>
@@ -332,11 +372,6 @@ st.markdown("""
     text-decoration: none;
     font-weight: bold;
 }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<style>
 #backToTopBtn {
     display: none;
     position: fixed;
