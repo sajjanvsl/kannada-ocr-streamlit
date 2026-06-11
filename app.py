@@ -144,7 +144,8 @@ def convert_old_to_new_kannada(text):
 # ------------------- Year Classifier with Multiple Models (Robust) -------------------
 @st.cache_resource
 def prepare_classifiers():
-    folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm"
+    folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
+    
     output_folder = "Dataset"
 
     if not os.path.exists(output_folder):
