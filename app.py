@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Apr 27 09:46:46 2025
-@author: Admin
+Kannada OCR with Old → Hosa Kannada Converter & Year Classifier
 """
 
 import streamlit as st
@@ -14,6 +13,7 @@ from datetime import datetime
 import random
 import numpy as np
 import cv2
+import zipfile
 import gdown
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
@@ -23,16 +23,18 @@ from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from collections import Counter
 
-# Set Tesseract path (adjust if needed)
+# ------------------------------------------------------------
+# Tesseract path (adjust if needed)
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 def run_full_ocr(image_array, psm=6):
     config = f'--oem 1 --psm {psm} -l kan'
     return pytesseract.image_to_string(Image.fromarray(image_array), config=config).strip()
 
+# ------------------------------------------------------------
 st.set_page_config(page_title="Kannada OCR", layout="centered")
 
-# --- Header Banner ---
+# Header Banner
 st.markdown("""
 <style>
 @keyframes slideDown {
@@ -52,30 +54,10 @@ st.markdown("""
     border-bottom: 2px solid #d8cfc4;
     animation: slideDown 0.5s ease-out;
 }
-.header-logo {
-    display: block;
-    margin: 0 auto 5px auto;
-    width: 60px;
-    height: auto;
-}
-.header-text {
-    color:#800000;
-    font-weight:700;
-    text-align:center;
-    line-height: 1.2;
-    margin: 2px 0;
-}
 </style>
-
 <div class='sticky-title'>Kannada OCR Web App</div>
-
-<h3 style='color:#800000; font-weight:700; text-align:center;'>
-Rani Channamma University, Belagavi
-</h3>
-<h4 style='color:#800000; font-weight:500; text-align:center;'>
-Dept. of Computer Science
-</h4>
-
+<h3 style='color:#800000; font-weight:700; text-align:center;'>Rani Channamma University, Belagavi</h3>
+<h4 style='color:#800000; font-weight:500; text-align:center;'>Dept. of Computer Science</h4>
 <h6 style='color:#000000; font-weight:700; text-align:center;'>Kannada OCR with Old → Hosa Kannada Converter & Year Classifier</h6>
 <h6 style='color:#800000; font-weight:700; text-align:center;'>ಕನ್ನಡ ಓಸಿಆರ್ ಹಳೆಯ → ಹೊಸ ಕನ್ನಡ ಪರಿವರ್ತಕ ಮತ್ತು ವರ್ಷ ವರ್ಗವಿಂಗಡಕ</h6>
 """, unsafe_allow_html=True)
@@ -84,7 +66,7 @@ st.markdown("""
 Digitizing palm leaf manuscripts plays a vital role in preserving ancient knowledge systems, historical records,
 and cultural heritage. This research enables the conversion of fragile, handwritten scripts into modern,
 machine-readable Kannada text, allowing scholars and the public to access invaluable information with clarity,
-searchability, and long-term archiving. Through this initiative, linguistic history is safeguarded for future generations.
+searchability, and long-term archiving.
 """)
 
 if "reset_triggered" not in st.session_state:
@@ -100,7 +82,8 @@ page = st.sidebar.radio(
     index=0
 )
 
-# --- OCR Utilities ---
+# ------------------------------------------------------------
+# OCR Utilities
 def rotate_image(image: Image.Image, angle: int) -> Image.Image:
     return image.rotate(angle, expand=True)
 
@@ -141,131 +124,125 @@ def convert_old_to_new_kannada(text):
         text = text.replace(old_word, new_word)
     return text
 
-# ------------------- Year Classifier with Multiple Models (Robust) -------------------
-@st.cache_resource
-def prepare_classifiers():
-    folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
-    
-    output_folder = "Dataset"
-
-    if not os.path.exists(output_folder):
-        st.info("📥 Downloading dataset folder from Google Drive...")
-        try:
-            # --- Use Folder ID instead of URL for better reliability ---
-            import gdown
-            # Extract folder ID from URL
-            folder_id = "1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm"
-            gdown.download_folder(id=folder_id, output=output_folder, quiet=False, use_cookies=False)
-            st.success("✅ Dataset folder downloaded!")
-            
-            # --- Verify dataset structure after download ---
-            if not os.path.exists(output_folder):
-                st.error(f"Dataset folder '{output_folder}' not found after download.")
-                return None, None, None, None, None
-                
-            subfolders = [f for f in os.listdir(output_folder) if os.path.isdir(os.path.join(output_folder, f))]
-            if len(subfolders) < 2:
-                st.error(f"Only {len(subfolders)} subfolders found. Expected at least 2 year classes. Found: {subfolders}")
-                return None, None, None, None, None
-            st.info(f"Found {len(subfolders)} year classes: {', '.join(subfolders)}")
-            
-        except Exception as e:
-            st.error(f"Failed to download dataset: {e}")
-            return None, None, None, None, None
-
-    # Load images and labels
+# ------------------------------------------------------------
+# Robust Dataset Loader (handles nested folders, zip upload, auto-download)
+def load_dataset_from_path(root_path):
+    """Recursively collect images and assign class = parent folder name."""
     X, y = [], []
     IMG_SIZE = 64
+    image_ext = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
     
-    for folder in os.listdir(output_folder):
-        path = os.path.join(output_folder, folder)
-        if os.path.isdir(path):
-            image_files = [f for f in os.listdir(path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            if len(image_files) == 0:
-                st.warning(f"No images found in class '{folder}'")
-                continue
-            for file in image_files:
+    for dirpath, _, filenames in os.walk(root_path):
+        for f in filenames:
+            if f.lower().endswith(image_ext):
+                # Class name = immediate parent folder name
+                class_name = os.path.basename(dirpath)
+                if class_name == root_path or class_name == "":
+                    continue  # skip images directly in root
                 try:
-                    img_path = os.path.join(path, file)
-                    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+                    img = cv2.imread(os.path.join(dirpath, f), cv2.IMREAD_GRAYSCALE)
                     if img is None:
-                        st.warning(f"Could not read image: {img_path}")
                         continue
                     img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
                     X.append(img.flatten())
-                    y.append(folder)
-                except Exception as e:
-                    st.warning(f"Error processing {img_path}: {e}")
+                    y.append(class_name)
+                except Exception:
                     continue
+    return np.array(X), np.array(y)
 
+@st.cache_resource
+def prepare_classifiers():
+    dataset_path = "Dataset"
+    
+    # 1. Try automatic download if folder missing
+    if not os.path.exists(dataset_path):
+        st.info("📥 Downloading dataset from Google Drive...")
+        folder_id = "1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm"
+        try:
+            gdown.download_folder(id=folder_id, output=dataset_path, quiet=False, use_cookies=False)
+            st.success("✅ Download completed.")
+        except Exception as e:
+            st.error(f"Auto‑download failed: {e}")
+            # Offer manual upload as fallback
+            st.info("⬇️ Please upload a ZIP file containing the dataset (with folders 1067,1155,1202,1456).")
+            uploaded_zip = st.file_uploader("Upload Dataset.zip", type=["zip"], key="dataset_zip")
+            if uploaded_zip is not None:
+                with zipfile.ZipFile(uploaded_zip, 'r') as zip_ref:
+                    zip_ref.extractall(dataset_path)
+                st.success("✅ Dataset extracted from ZIP.")
+            else:
+                return None, None, None, None, None
+
+    # 2. Load images recursively
+    X, y = load_dataset_from_path(dataset_path)
+    
     if len(X) == 0:
-        st.error("No valid images found in dataset. Year prediction will be disabled.")
+        st.error("No images found in dataset folder. Please check the folder structure.")
         return None, None, None, None, None
-
-    X = np.array(X)
+    
+    # 3. Show detected classes
+    unique_classes = np.unique(y)
+    st.sidebar.info(f"📂 Found classes: {list(unique_classes)}")
+    if len(unique_classes) < 2:
+        st.error(f"Need at least 2 classes, but found only {unique_classes}. Year prediction disabled.")
+        return None, None, None, None, None
+    
+    # 4. Encode labels
     le = LabelEncoder()
     y_enc = le.fit_transform(y)
-
-    # Check class distribution
-    unique, counts = np.unique(y_enc, return_counts=True)
-    if len(unique) < 2:
-        st.error(f"Only one class found in dataset ({le.inverse_transform([unique[0]])[0]}). Need at least 2 classes for classification.")
-        return None, None, None, None, None
-
-    # Normalize pixel values
+    
+    # 5. Preprocess: normalize
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-
-    # PCA – reduce dimension, but ensure n_components <= n_samples - 1 and <= n_features
+    
+    # 6. PCA (if enough samples)
     n_components = min(50, X_scaled.shape[0] - 1, X_scaled.shape[1])
-    if n_components < 1:
-        st.warning("Not enough samples for PCA. Using raw features (may be slow).")
-        X_pca = X_scaled
-        pca = None
-    else:
+    if n_components >= 2:
         pca = PCA(n_components=n_components)
         X_pca = pca.fit_transform(X_scaled)
-
-    # Define base models
+    else:
+        pca = None
+        X_pca = X_scaled
+        st.warning("Too few samples for PCA, using raw features.")
+    
+    # 7. Models
     models = {
         "KNN": KNeighborsClassifier(n_neighbors=5),
         "SVM": SVC(kernel='rbf', gamma='scale', C=1.0, probability=True)
     }
-    # Add LDA if conditions are met
-    if len(unique) >= 2 and (pca is None or n_components >= len(unique)):
+    if pca is not None and n_components >= len(unique_classes):
         models["LDA"] = LDA()
-    else:
-        st.warning("LDA skipped due to insufficient components or classes. Using KNN and SVM only.")
-
+    
     cv_scores = {}
     trained_models = {}
     for name, model in models.items():
         try:
-            n_folds = min(5, len(unique))
-            scores = cross_val_score(model, X_pca, y_enc, cv=n_folds, scoring='accuracy', error_score='raise')
+            n_folds = min(5, len(unique_classes))
+            scores = cross_val_score(model, X_pca, y_enc, cv=n_folds, scoring='accuracy')
             cv_scores[name] = (scores.mean(), scores.std())
             model.fit(X_pca, y_enc)
             trained_models[name] = model
         except Exception as e:
-            st.warning(f"Could not train {name}: {str(e)}")
-            continue
-
+            st.warning(f"Could not train {name}: {e}")
+    
     if not trained_models:
-        st.error("No classifier could be trained. Year prediction will be disabled.")
+        st.error("No classifier trained. Year prediction disabled.")
         return None, None, None, None, None
-
-    # Display performance in sidebar
+    
+    # Display performance
     st.sidebar.markdown("## 📊 Model Performance (CV)")
     for name, (mean, std) in cv_scores.items():
         st.sidebar.metric(f"{name} Accuracy", f"{mean:.2%} ± {std:.2%}")
-
+    
     return trained_models, le, scaler, pca, cv_scores
-# Load classifiers (may be None if dataset fails)
-models_dict, label_encoder, std_scaler, pca_transformer, cv_scores = prepare_classifiers()
-if models_dict is None:
-    st.sidebar.error("⚠️ Year classifier not available. Year prediction will be disabled.")
 
-# ------------------- Main OCR Page -------------------
+# Load models
+models_dict, label_encoder, std_scaler, pca_transformer, _ = prepare_classifiers()
+if models_dict is None:
+    st.sidebar.error("⚠️ Year classifier unavailable. Check dataset.")
+
+# ------------------------------------------------------------
+# Main OCR Page
 if page == "📄 OCR Processor":
     st.sidebar.header("🎛️ Kannada OCR Controls")
     uploaded_file = st.sidebar.file_uploader("Upload Old Kannada Image", type=["jpg", "jpeg", "png", "bmp"])
@@ -279,16 +256,15 @@ if page == "📄 OCR Processor":
 
         image = Image.open(uploaded_file)
 
-        # Manual crop + rotation
+        # Manual crop & rotation
         if enable_crop:
             st.subheader("✂️ Crop & Rotate Image")
-            rotation_angle = st.slider("🔄 Rotate Before Cropping (°)", min_value=0, max_value=360, step=90, value=0)
+            rotation_angle = st.slider("🔄 Rotate Before Cropping (°)", 0, 360, 0, step=90)
             if rotation_angle != 0:
                 image = rotate_image(image, rotation_angle)
                 st.image(image, caption=f"Rotated {rotation_angle}°")
             image = st_cropper(image, realtime_update=True, box_color='blue')
 
-        # Auto-crop
         if auto_crop:
             cropped = auto_crop_image(np.array(image.convert("RGB")))
             st.image(cropped, caption="Auto-Cropped Preview")
@@ -329,14 +305,13 @@ if page == "📄 OCR Processor":
             df.to_csv("feedback.csv", index=False)
             st.success("✅ Feedback Saved!")
 
-        # Display translation confidence
         col_metric1, col_metric2 = st.columns(2)
         with col_metric1:
             st.metric("Translation Confidence", f"{confidence}%")
         with col_metric2:
             if predict_year and models_dict is not None:
                 try:
-                    # Prepare image: resize to 64x64, flatten, normalize, PCA
+                    # Prepare image for classification
                     img_resized = cv2.resize(enhanced, (64, 64))
                     img_flat = img_resized.flatten().reshape(1, -1)
                     img_scaled = std_scaler.transform(img_flat)
@@ -348,33 +323,33 @@ if page == "📄 OCR Processor":
                     pred_years = {}
                     for name, model in models_dict.items():
                         pred_enc = model.predict(img_pca)[0]
-                        pred_year = label_encoder.inverse_transform([pred_enc])[0]
-                        pred_years[name] = pred_year
+                        pred_years[name] = label_encoder.inverse_transform([pred_enc])[0]
 
-                    # Display individual predictions
+                    # Show individual predictions
                     st.subheader("📅 Year Prediction Results")
                     cols = st.columns(len(pred_years))
                     for i, (name, year) in enumerate(pred_years.items()):
                         cols[i].metric(f"{name} Prediction", year)
 
-                    # Ensemble (majority vote)
+                    # Majority vote
                     vote = Counter(pred_years.values()).most_common(1)[0][0]
                     st.success(f"🎯 **Ensemble Prediction (Majority Vote): {vote}**")
                 except Exception as e:
-                    st.error(f"Year prediction failed: {str(e)}")
-            elif predict_year and models_dict is None:
-                st.warning("Year prediction is unavailable because the classifier could not be initialized (dataset issue).")
+                    st.error(f"Year prediction error: {e}")
+            elif predict_year:
+                st.warning("Year classifier not available. Please check dataset.")
 
         st.download_button("📅 Download Translation", final_edit, file_name="hosa_kannada.txt")
 
-# ------------------- Other Pages -------------------
+# ------------------------------------------------------------
+# Other Pages
 elif page == "📘 How to Use":
     st.header("📘 User Instructions")
     st.markdown("""
     1. Upload Old Kannada image
     2. Enhance & Run OCR
     3. Translate to Modern Kannada
-    4. Predict Year (optional) – uses multiple ML models (KNN, SVM, LDA if possible) with majority vote
+    4. Predict Year (optional) – uses KNN, SVM, LDA (if possible) with majority vote
     5. Download & Submit Feedback
     """)
 
@@ -383,13 +358,11 @@ elif page == "👨‍💻 Developer Info":
     st.markdown("""
     ### 🧭 Under the Guidance of
     **Dr. Parashuram Bannigidad**  
-    HOD and Professor  
-    Dept. of Computer Science  
+    HOD and Professor, Dept. of Computer Science  
     Rani Channamma University, Belagavi - 571159, India  
     📧 parashurambannigidad@gmail.com
 
     ---
-
     ### 🛠️ Designed and Developed by
     **S. P. Sajjan**  
     Assistant Professor and Research Scholar  
@@ -403,12 +376,12 @@ elif page == "🙏 Acknowledgements":
     Head, *e-Sahithya Documentation Forum, Digitization of Palm Leaf, Paper Manuscripts & Research Center, Bengaluru*,  
     for generously providing high-quality palm leaf manuscript samples crucial to this research.
 
-    **e-Sahithya** is a pioneering initiative committed to the digitization and preservation of Indian literary heritage.  
-    🌐 Website: [esahithya.com](https://esahithya.com)  
-    👍 Facebook: [facebook.com/domlurashok](https://www.facebook.com/domlurashok)
+    **e-Sahithya** – Digitization and preservation of Indian literary heritage.  
+    🌐 [esahithya.com](https://esahithya.com) | 👍 [Facebook](https://www.facebook.com/domlurashok)
     """)
 
-# --- Footer and Back-to-Top Button ---
+# ------------------------------------------------------------
+# Footer and Back-to-Top
 st.markdown("""
 <hr>
 <div style='text-align:center; font-size: 0.9em; color: gray;'>
@@ -419,24 +392,6 @@ st.markdown("""
 
 st.markdown("""
 <style>
-.sticky-footer {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background-color: #fff8f0;
-    color: #800000;
-    text-align: center;
-    padding: 8px;
-    font-size: 14px;
-    border-top: 1px solid #ccc;
-    z-index: 999;
-}
-.sticky-footer a {
-    color: #800000;
-    text-decoration: none;
-    font-weight: bold;
-}
 #backToTopBtn {
     display: none;
     position: fixed;
@@ -451,11 +406,8 @@ st.markdown("""
     cursor: pointer;
     padding: 10px 16px;
     border-radius: 5px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
-#backToTopBtn:hover {
-    background-color: #5a0000;
-}
+#backToTopBtn:hover { background-color: #5a0000; }
 </style>
 <button onclick="topFunction()" id="backToTopBtn" title="Back to top">Top</button>
 <script>
