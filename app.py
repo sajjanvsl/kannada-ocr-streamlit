@@ -14,18 +14,16 @@ from datetime import datetime
 import random
 import numpy as np
 import cv2
-import zipfile
 import gdown
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from sklearn.decomposition import PCA
-from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import accuracy_score
-import joblib
+from collections import Counter
 
-# Tesseract path
+# Set Tesseract path (adjust if needed)
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 def run_full_ocr(image_array, psm=6):
@@ -69,7 +67,6 @@ st.markdown("""
 }
 </style>
 
-
 <div class='sticky-title'>Kannada OCR Web App</div>
 
 <h3 style='color:#800000; font-weight:700; text-align:center;'>
@@ -103,7 +100,7 @@ page = st.sidebar.radio(
     index=0
 )
 
-# --- OCR Utilities (rotation, crop, enhance) ---
+# --- OCR Utilities ---
 def rotate_image(image: Image.Image, angle: int) -> Image.Image:
     return image.rotate(angle, expand=True)
 
@@ -144,7 +141,7 @@ def convert_old_to_new_kannada(text):
         text = text.replace(old_word, new_word)
     return text
 
-# ------------------- Enhanced Year Classifier with Multiple Models -------------------
+# ------------------- Year Classifier with Multiple Models (Robust) -------------------
 @st.cache_resource
 def prepare_classifiers():
     folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
@@ -152,8 +149,12 @@ def prepare_classifiers():
 
     if not os.path.exists(output_folder):
         st.info("📥 Downloading dataset folder from Google Drive...")
-        gdown.download_folder(url=folder_url, output=output_folder, quiet=False, use_cookies=False)
-        st.success("✅ Dataset folder downloaded!")
+        try:
+            gdown.download_folder(url=folder_url, output=output_folder, quiet=False, use_cookies=False)
+            st.success("✅ Dataset folder downloaded!")
+        except Exception as e:
+            st.error(f"Failed to download dataset: {e}")
+            return None, None, None, None, None
 
     # Load images and labels
     X, y = [], []
@@ -164,51 +165,82 @@ def prepare_classifiers():
             for file in os.listdir(path):
                 try:
                     img = cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE)
+                    if img is None:
+                        continue
                     img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
                     X.append(img.flatten())
                     y.append(folder)
                 except:
                     continue
 
+    if len(X) == 0:
+        st.error("No images found in dataset. Year prediction will be disabled.")
+        return None, None, None, None, None
+
     X = np.array(X)
     le = LabelEncoder()
     y_enc = le.fit_transform(y)
+
+    # Check class distribution
+    unique, counts = np.unique(y_enc, return_counts=True)
+    if len(unique) < 2:
+        st.error(f"Only one class found in dataset ({le.inverse_transform([unique[0]])[0]}). Need at least 2 classes for classification.")
+        return None, None, None, None, None
 
     # Normalize pixel values
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # PCA to reduce dimension (keep 50 components)
-    pca = PCA(n_components=min(50, X_scaled.shape[0]-1, X_scaled.shape[1]))
-    X_pca = pca.fit_transform(X_scaled)
+    # PCA – reduce dimension, but ensure n_components <= n_samples - 1 and <= n_features
+    n_components = min(50, X_scaled.shape[0] - 1, X_scaled.shape[1])
+    if n_components < 1:
+        st.warning("Not enough samples for PCA. Using raw features (may be slow).")
+        X_pca = X_scaled
+        pca = None
+    else:
+        pca = PCA(n_components=n_components)
+        X_pca = pca.fit_transform(X_scaled)
 
-    # Define models
+    # Define base models (KNN and SVM always attempted)
     models = {
         "KNN": KNeighborsClassifier(n_neighbors=5),
-        "SVM": SVC(kernel='rbf', gamma='scale', C=1.0, probability=True),
-        "LDA": LDA()
+        "SVM": SVC(kernel='rbf', gamma='scale', C=1.0, probability=True)
     }
+    # Add LDA only if conditions are met: n_classes >= 2 and (no PCA or n_components >= n_classes)
+    if len(unique) >= 2 and (pca is None or n_components >= len(unique)):
+        models["LDA"] = LDA()
+    else:
+        st.warning("LDA skipped due to insufficient components or classes. Using KNN and SVM only.")
 
-    # Train and evaluate using cross-validation
     cv_scores = {}
     trained_models = {}
     for name, model in models.items():
-        scores = cross_val_score(model, X_pca, y_enc, cv=5, scoring='accuracy')
-        cv_scores[name] = (scores.mean(), scores.std())
-        # Retrain on full data for later prediction
-        model.fit(X_pca, y_enc)
-        trained_models[name] = model
+        try:
+            # Use min(5, n_classes) for CV folds to avoid errors
+            n_folds = min(5, len(unique))
+            scores = cross_val_score(model, X_pca, y_enc, cv=n_folds, scoring='accuracy')
+            cv_scores[name] = (scores.mean(), scores.std())
+            model.fit(X_pca, y_enc)
+            trained_models[name] = model
+        except Exception as e:
+            st.warning(f"Could not train {name}: {str(e)}")
+            continue
 
-    # Display results in sidebar (only once)
-    st.sidebar.markdown("## 📊 Model Performance (5-fold CV)")
+    if not trained_models:
+        st.error("No classifier could be trained. Year prediction will be disabled.")
+        return None, None, None, None, None
+
+    # Display performance in sidebar
+    st.sidebar.markdown("## 📊 Model Performance (CV)")
     for name, (mean, std) in cv_scores.items():
         st.sidebar.metric(f"{name} Accuracy", f"{mean:.2%} ± {std:.2%}")
 
-    # Also store encoder, scaler, pca for later use
     return trained_models, le, scaler, pca, cv_scores
 
-# Load models (cached)
+# Load classifiers (may be None if dataset fails)
 models_dict, label_encoder, std_scaler, pca_transformer, cv_scores = prepare_classifiers()
+if models_dict is None:
+    st.sidebar.error("⚠️ Year classifier not available. Year prediction will be disabled.")
 
 # ------------------- Main OCR Page -------------------
 if page == "📄 OCR Processor":
@@ -230,7 +262,7 @@ if page == "📄 OCR Processor":
             rotation_angle = st.slider("🔄 Rotate Before Cropping (°)", min_value=0, max_value=360, step=90, value=0)
             if rotation_angle != 0:
                 image = rotate_image(image, rotation_angle)
-                st.image(image, caption=f"Rotated {rotation_angle}")
+                st.image(image, caption=f"Rotated {rotation_angle}°")
             image = st_cropper(image, realtime_update=True, box_color='blue')
 
         # Auto-crop
@@ -274,32 +306,42 @@ if page == "📄 OCR Processor":
             df.to_csv("feedback.csv", index=False)
             st.success("✅ Feedback Saved!")
 
-        # --- Year Prediction using all three models ---
-        if predict_year:
-            # Prepare image: resize to 64x64, flatten, normalize, PCA
-            img_resized = cv2.resize(enhanced, (64, 64))
-            img_flat = img_resized.flatten().reshape(1, -1)
-            img_scaled = std_scaler.transform(img_flat)
-            img_pca = pca_transformer.transform(img_scaled)
+        # Display translation confidence
+        col_metric1, col_metric2 = st.columns(2)
+        with col_metric1:
+            st.metric("Translation Confidence", f"{confidence}%")
+        with col_metric2:
+            if predict_year and models_dict is not None:
+                try:
+                    # Prepare image: resize to 64x64, flatten, normalize, PCA
+                    img_resized = cv2.resize(enhanced, (64, 64))
+                    img_flat = img_resized.flatten().reshape(1, -1)
+                    img_scaled = std_scaler.transform(img_flat)
+                    if pca_transformer is not None:
+                        img_pca = pca_transformer.transform(img_scaled)
+                    else:
+                        img_pca = img_scaled
 
-            st.subheader("📅 Year Prediction Results")
-            pred_years = {}
-            for name, model in models_dict.items():
-                pred_enc = model.predict(img_pca)[0]
-                pred_year = label_encoder.inverse_transform([pred_enc])[0]
-                pred_years[name] = pred_year
+                    pred_years = {}
+                    for name, model in models_dict.items():
+                        pred_enc = model.predict(img_pca)[0]
+                        pred_year = label_encoder.inverse_transform([pred_enc])[0]
+                        pred_years[name] = pred_year
 
-            # Display individual predictions
-            cols = st.columns(3)
-            for i, (name, year) in enumerate(pred_years.items()):
-                cols[i].metric(f"{name} Prediction", year)
+                    # Display individual predictions
+                    st.subheader("📅 Year Prediction Results")
+                    cols = st.columns(len(pred_years))
+                    for i, (name, year) in enumerate(pred_years.items()):
+                        cols[i].metric(f"{name} Prediction", year)
 
-            # Ensemble (majority vote)
-            from collections import Counter
-            vote = Counter(pred_years.values()).most_common(1)[0][0]
-            st.success(f"🎯 **Ensemble Prediction (Majority Vote): {vote}**")
+                    # Ensemble (majority vote)
+                    vote = Counter(pred_years.values()).most_common(1)[0][0]
+                    st.success(f"🎯 **Ensemble Prediction (Majority Vote): {vote}**")
+                except Exception as e:
+                    st.error(f"Year prediction failed: {str(e)}")
+            elif predict_year and models_dict is None:
+                st.warning("Year prediction is unavailable because the classifier could not be initialized (dataset issue).")
 
-        # Download translation
         st.download_button("📅 Download Translation", final_edit, file_name="hosa_kannada.txt")
 
 # ------------------- Other Pages -------------------
@@ -309,7 +351,7 @@ elif page == "📘 How to Use":
     1. Upload Old Kannada image
     2. Enhance & Run OCR
     3. Translate to Modern Kannada
-    4. Predict Year (optional) – uses three advanced ML models (KNN, SVM, LDA) with majority vote
+    4. Predict Year (optional) – uses multiple ML models (KNN, SVM, LDA if possible) with majority vote
     5. Download & Submit Feedback
     """)
 
