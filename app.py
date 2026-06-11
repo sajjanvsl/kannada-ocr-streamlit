@@ -144,14 +144,30 @@ def convert_old_to_new_kannada(text):
 # ------------------- Year Classifier with Multiple Models (Robust) -------------------
 @st.cache_resource
 def prepare_classifiers():
-    folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm?usp=sharing"
+    folder_url = "https://drive.google.com/drive/folders/1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm"
     output_folder = "Dataset"
 
     if not os.path.exists(output_folder):
         st.info("📥 Downloading dataset folder from Google Drive...")
         try:
-            gdown.download_folder(url=folder_url, output=output_folder, quiet=False, use_cookies=False)
+            # --- Use Folder ID instead of URL for better reliability ---
+            import gdown
+            # Extract folder ID from URL
+            folder_id = "1G4CNR2WeaRP_s_c7lddnIyoQG2ck4nYm"
+            gdown.download_folder(id=folder_id, output=output_folder, quiet=False, use_cookies=False)
             st.success("✅ Dataset folder downloaded!")
+            
+            # --- Verify dataset structure after download ---
+            if not os.path.exists(output_folder):
+                st.error(f"Dataset folder '{output_folder}' not found after download.")
+                return None, None, None, None, None
+                
+            subfolders = [f for f in os.listdir(output_folder) if os.path.isdir(os.path.join(output_folder, f))]
+            if len(subfolders) < 2:
+                st.error(f"Only {len(subfolders)} subfolders found. Expected at least 2 year classes. Found: {subfolders}")
+                return None, None, None, None, None
+            st.info(f"Found {len(subfolders)} year classes: {', '.join(subfolders)}")
+            
         except Exception as e:
             st.error(f"Failed to download dataset: {e}")
             return None, None, None, None, None
@@ -159,22 +175,30 @@ def prepare_classifiers():
     # Load images and labels
     X, y = [], []
     IMG_SIZE = 64
+    
     for folder in os.listdir(output_folder):
         path = os.path.join(output_folder, folder)
         if os.path.isdir(path):
-            for file in os.listdir(path):
+            image_files = [f for f in os.listdir(path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            if len(image_files) == 0:
+                st.warning(f"No images found in class '{folder}'")
+                continue
+            for file in image_files:
                 try:
-                    img = cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE)
+                    img_path = os.path.join(path, file)
+                    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
                     if img is None:
+                        st.warning(f"Could not read image: {img_path}")
                         continue
                     img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
                     X.append(img.flatten())
                     y.append(folder)
-                except:
+                except Exception as e:
+                    st.warning(f"Error processing {img_path}: {e}")
                     continue
 
     if len(X) == 0:
-        st.error("No images found in dataset. Year prediction will be disabled.")
+        st.error("No valid images found in dataset. Year prediction will be disabled.")
         return None, None, None, None, None
 
     X = np.array(X)
@@ -201,12 +225,12 @@ def prepare_classifiers():
         pca = PCA(n_components=n_components)
         X_pca = pca.fit_transform(X_scaled)
 
-    # Define base models (KNN and SVM always attempted)
+    # Define base models
     models = {
         "KNN": KNeighborsClassifier(n_neighbors=5),
         "SVM": SVC(kernel='rbf', gamma='scale', C=1.0, probability=True)
     }
-    # Add LDA only if conditions are met: n_classes >= 2 and (no PCA or n_components >= n_classes)
+    # Add LDA if conditions are met
     if len(unique) >= 2 and (pca is None or n_components >= len(unique)):
         models["LDA"] = LDA()
     else:
@@ -216,9 +240,8 @@ def prepare_classifiers():
     trained_models = {}
     for name, model in models.items():
         try:
-            # Use min(5, n_classes) for CV folds to avoid errors
             n_folds = min(5, len(unique))
-            scores = cross_val_score(model, X_pca, y_enc, cv=n_folds, scoring='accuracy')
+            scores = cross_val_score(model, X_pca, y_enc, cv=n_folds, scoring='accuracy', error_score='raise')
             cv_scores[name] = (scores.mean(), scores.std())
             model.fit(X_pca, y_enc)
             trained_models[name] = model
@@ -236,7 +259,6 @@ def prepare_classifiers():
         st.sidebar.metric(f"{name} Accuracy", f"{mean:.2%} ± {std:.2%}")
 
     return trained_models, le, scaler, pca, cv_scores
-
 # Load classifiers (may be None if dataset fails)
 models_dict, label_encoder, std_scaler, pca_transformer, cv_scores = prepare_classifiers()
 if models_dict is None:
